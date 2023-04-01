@@ -1,0 +1,295 @@
+# %%
+
+import folium
+import pandas as pd
+import matplotlib.pyplot as plt
+from IPython.display import display
+import tqdm
+import time
+import base64
+import urllib3
+# disable warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import gpxpy
+import gpxpy.gpx
+plt.rcParams['axes.spines.top'] = False
+plt.rcParams['axes.spines.right'] = False
+
+# todo: import all gpx files
+# todo: calculate speed in minutes per mile
+
+# todo: dictionary to store all route_info, elevation profile, pop-up text
+# plot"
+
+option_sample = False
+# %%
+activities =r"/Users/mavischan/Desktop/strava/activities.csv"
+df_activities = pd.read_csv(activities)
+df_activities.columns = df_activities.columns.str.lower()
+#df_activities.columns = map(str.lower, df_activities.columns)
+df_activities = df_activities.loc[df_activities["filename"].notnull()]
+#event = df_activities[df_activities["Filename"]=="activities/6230723184.gpx"].copy()
+df_activities.drop(columns=[
+    'max heart rate',
+ 'relative effort',
+ 'commute',
+ 'activity private note',
+ 'activity gear',
+ 'athlete weight',
+ 'bike weight',
+ 'max grade',
+ 'average grade',
+ 'average positive grade',
+ 'average negative grade',
+ 'max heart rate.1',
+ 'average heart rate',
+ 'max watts',
+ 'average watts',
+ 'calories',
+ 'max temperature',
+ 'average temperature',
+ 'relative effort.1',
+ 'total work',
+ 'number of runs',
+ 'uphill time',
+ 'downhill time',
+ 'other time',
+ 'perceived exertion',
+ '<span class="translation_missing" title="translation missing: en-us.lib.export.portability_exporter.activities.horton_values.type">type</span>',
+ '<span class="translation_missing" title="translation missing: en-us.lib.export.portability_exporter.activities.horton_values.start_time">start time</span>',
+ 'weighted average power',
+ 'power count',
+ 'prefer perceived exertion',
+ 'perceived relative effort',
+ 'commute.1',
+ 'total weight lifted',
+ 'from upload',
+ 'grade adjusted distance',
+ 'weather observation time',
+ 'weather condition',
+ 'weather temperature',
+ 'apparent temperature',
+ 'dewpoint',
+ 'humidity',
+ 'weather pressure',
+ 'wind speed',
+ 'wind gust',
+ 'wind bearing',
+ 'precipitation intensity',
+ 'sunrise time',
+ 'sunset time',
+ 'moon phase',
+ 'bike',
+ 'gear',
+ 'precipitation probability',
+ 'precipitation type',
+ 'cloud cover',
+ 'weather visibility',
+ 'uv index',
+ 'weather ozone',
+ '<span class="translation_missing" title="translation missing: en-us.lib.export.portability_exporter.activities.horton_values.jump_count">jump count</span>',
+ '<span class="translation_missing" title="translation missing: en-us.lib.export.portability_exporter.activities.horton_values.total_grit">total grit</span>',
+ '<span class="translation_missing" title="translation missing: en-us.lib.export.portability_exporter.activities.horton_values.avg_flow">avg flow</span>',
+ '<span class="translation_missing" title="translation missing: en-us.lib.export.portability_exporter.activities.horton_values.flagged">flagged</span>',
+ '<span class="translation_missing" title="translation missing: en-us.lib.export.portability_exporter.activities.horton_values.avg_elapsed_speed">avg elapsed speed</span>',
+ '<span class="translation_missing" title="translation missing: en-us.lib.export.portability_exporter.activities.horton_values.dirt_distance">dirt distance</span>',
+ '<span class="translation_missing" title="translation missing: en-us.lib.export.portability_exporter.activities.horton_values.newly_explored_distance">newly explored distance</span>',
+ '<span class="translation_missing" title="translation missing: en-us.lib.export.portability_exporter.activities.horton_values.newly_explored_dirt_distance">newly explored dirt distance</span>',
+ '<span class="translation_missing" title="translation missing: en-us.lib.export.portability_exporter.activities.horton_values.sport_type">sport type</span>',
+ '<span class="translation_missing" title="translation missing: en-us.lib.export.portability_exporter.activities.horton_values.total_steps">total steps</span>',
+ 'media',
+ 'max cadence',
+  'elevation loss',
+ 'average cadence',
+  'elevation low',
+ 'elevation high',
+], inplace=True)
+df_activities.describe()
+df_activities.drop(columns=["elapsed time.1", "distance.1"], inplace=True)
+df_activities.describe()
+df_activities["moving time"] = pd.to_numeric(df_activities["moving time"])
+df_activities["distance"] = pd.to_numeric(df_activities["distance"])
+df_activities["speed"] = (df_activities["moving time"].div(60)).div(df_activities["distance"].div(1.6))
+if option_sample:
+    df_activities = df_activities.sample(7)
+df_activities.reset_index(drop=True, inplace=True)
+
+plt.figure()
+plt.hist(df_activities["speed"], bins=20)
+plt.show()
+
+# %%
+route_dict =dict()
+elevation_dict=dict()
+elevation_profile=dict()
+for idx in df_activities["activity id"].unique():
+    filename = '/Users/mavischan/Desktop/strava/gpx/{0}.gpx'.format(idx)
+    with open(filename, 'r') as gpx_file:
+        gpx = gpxpy.parse(gpx_file)
+
+    route_info = []
+    for track in gpx.tracks:
+        for segment in track.segments:
+            for point in segment.points:
+                route_info.append({
+                    'latitude': point.latitude,
+                    'longitude': point.longitude,
+                    'elevation': point.elevation
+                })
+    route_df = pd.DataFrame(route_info)
+    route_dict[idx] = route_df
+
+    elevation_info=[]
+    for track in gpx.tracks:
+        for segment in track.segments:
+            for point in segment.points:
+                elevation_info.append(point.elevation)
+    elevation_dict[idx] = elevation_info
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax = pd.Series(elevation_info).rolling(3).mean().plot(
+        ax=ax, 
+        color='steelblue', 
+        legend=False
+    )
+    ax.set_ylabel("Elevation")
+    ax.axes.xaxis.set_visible(False)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    png = 'elevation_profile_{0}.png'.format(idx)
+    fig.savefig(png, dpi=75)
+    plt.close()
+
+    # read png file
+    elevation_profile[idx] = base64.b64encode(open(png, 'rb').read()).decode()
+    
+    # delete file
+    #os.remove(png)
+
+#gpx.get_track_points_no()
+#gpx.get_elevation_extremes()
+#gpx.get_uphill_downhill()
+#len(gpx.tracks)
+#len(gpx.tracks[0].segments)
+#len(gpx.tracks[0].segments[0].points)
+#route_df.to_csv('/Users/mavischan/Desktop/strava/gpx/route_df.csv', index=False)
+
+
+
+# %%
+route_map = folium.Map(
+    location=[51.50745, -0.029953],    #first row in dataframe
+    zoom_start=14,
+    tiles='cartodbdark_matter',
+    #tiles='OpenStreetMap', #
+    width=1024,
+    height=600
+)
+display(route_map)
+
+# %%
+color_dict ={"Run": "blue", "Ride": "red"}
+resolution, width, height = 75, 6, 6
+
+# %%
+from matplotlib import cm
+# rgb tuple to hexadecimal conversion
+def rgb2hex(rgb):
+    rgb = [hex(int(256*x)) for x in rgb]
+    r, g, b = [str(x)[2:] for x in rgb]
+    return f"#{r}{g}{b}"
+# Defines the color mapping from speeds to rgba
+color_mapper = cm.ScalarMappable(cmap=cm.YlOrRd)
+rgb_values = [c[:3] for c in color_mapper.to_rgba(sorted(df_activities["speed"].unique()))] # keep rgb and drop the "a" column
+colors = [rgb2hex(rgb) for rgb in rgb_values]
+
+
+# %%
+color_info=dict()
+for speed, color in zip(sorted(df_activities["speed"].unique()), colors):
+    color_info[speed]=color
+
+# %%
+for row in df_activities.iterrows():
+    row_index = row[0]
+    row_values = row[1]
+    idx = int(row_values["activity id"])
+    speed = row_values["speed"]
+    #color_activity = color_dict[row_values["activity type"]]
+    coordinates = [tuple(x) for x in route_dict[idx][['latitude', 'longitude']].to_numpy()]
+    #folium.PolyLine(coordinates, weight=3, color = color_activity).add_to(route_map)
+    folium.PolyLine(coordinates, weight=3, color = color_info[speed]).add_to(route_map)
+    halfway = len(route_dict[idx])/2
+    halfway = int(halfway)
+
+    html = """
+    <h3></h3>
+        <p>
+            <code>
+            Activity: {0} <br>
+            Distance/ km: {1} <br>
+            Moving time/ s: {2} <br>
+            Elevation gain: {3} <br>
+            Pace/ minutes per mile): {4}   <br>
+            </code>
+        </p>
+    <img src="data:image/png;base64,{5}">
+            
+            """.format(
+                row_values["activity name"],
+                row_values["distance"],
+                row_values["moving time"],
+                row_values["elevation gain"],
+                row_values["speed"],
+                #event.iloc[0]["Calories"],
+                elevation_profile[idx]
+                )
+
+    iframe = folium.IFrame(html, width=(width*resolution)+20, height=(height*resolution)+20)
+    popup = folium.Popup(iframe, max_width=2650)
+    marker = folium.Marker([route_dict[idx].iloc[halfway]['latitude'], route_dict[idx].iloc[halfway]['longitude']], popup=popup)
+    marker.add_to(route_map)
+
+route_map.save("/Users/mavischan/Desktop/mcychan_playground/index.html")
+display(route_map)
+
+
+
+
+
+
+# %%
+import dash
+from dash import Dash, html, dcc
+app = dash.Dash(__name__)
+app.layout = html.Div(
+    [   html.H1('My strava data ;D'),
+        html.Iframe(id='map', srcDoc=open('/Users/mavischan/Desktop/mcychan_playground/index.html', 'r').read(), width='100%', height='600'),
+    ]
+)
+# %%
+app.run_server(debug=True, use_reloader=False,port=8000, host='127.0.0.1')
+
+
+# %%
+1+1
+
+# %%
+import streamlit as st
+from streamlit_folium import st_folium
+# conda install -c conda-forge streamlit-folium
+st_data = st_folium(route_map, width=725)
+
+
+
+# %%
+app = dash.Dash(__name__)
+#server = app.server
+app.layout = html.Div(
+    children=[
+        html.Iframe(
+            src="Users/mavischan/Desktop/mcychan_playground/index.html",
+            #style={"height": "1067px", "width": "100%"},
+        )
+    ]
+)
